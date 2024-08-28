@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Bill Calculator</title>
+    <style>
+        /* CSS Styling */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #e43ab9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container {
+            background-color: #df21a6;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        h2, h3 {
+            color: #f8f5f5;
+        }
+        h1{
+            color: white;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ca24b4;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #dd59c7;
+            color: #be269d;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #cf4bae;
+        }
+        .result, .totals {
+            margin-top: 20px;
+        }
+        #error-message {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Phone Bill Calculator</h1>
+        <form id="calculator-form">
+            <label for="price-plan"><h3>Select Price Plan:</h3></label>
+            <select id="price-plan" name="price-plan" required></select>
+
+            <label for="actions"><h3>Enter Actions (call, sms):</h3></label>
+            <input type="text" id="actions" name="actions" placeholder="e.g., call,sms,call" required>
+
+            <button type="submit"><h3>Calculate Total</h3></button>
+        </form>
+        <div class="result">
+            <h2>Total Bill: <span id="total-bill">0.00</span></h2>
+            <p id="error-message"></p>
+        </div>
+        <div class="totals">
+            <h1>Totals Per Plan</h1>
+            <div id="totals-list"></div>
+            <h3>Most Spent Plan: <span id="most-spent-plan">-</span></h3>
+            <h3>Least Spent Plan: <span id="least-spent-plan">-</span></h3>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const pricePlanSelect = document.getElementById('price-plan');
+            const calculatorForm = document.getElementById('calculator-form');
+            const totalBillElement = document.getElementById('total-bill');
+            const errorMessage = document.getElementById('error-message');
+            const totalsList = document.getElementById('totals-list');
+            const mostSpentPlanElement = document.getElementById('most-spent-plan');
+            const leastSpentPlanElement = document.getElementById('least-spent-plan');
+
+            // Fetch price plans from the server
+            async function loadPricePlans() {
+                try {
+                    const response = await fetch('/api/price_plans');
+                    const data = await response.json();
+                    if (response.ok) {
+                        data.pricePlans.forEach(plan => {
+                            const option = document.createElement('option');
+                            option.value = plan.id;
+                            option.textContent = plan.plan_name;
+                            pricePlanSelect.appendChild(option);
+                        });
+                    } else {
+                        throw new Error(data.error || 'Error loading price plans');
+                    }
+                } catch (error) {
+                    console.error('Error loading price plans:', error);
+                    errorMessage.textContent = error.message;
+                }
+            }
+
+            // Calculate total bill
+            async function calculateTotalBill(planId, actions) {
+                try {
+                    const response = await fetch('/api/calculate_total', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ planId, actions }),
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        totalBillElement.textContent = `${data.totalBill} ZAR`;
+                        updateTotals(planId, data.totalBill);
+                    } else {
+                        throw new Error(data.error || 'Error calculating total bill');
+                    }
+                } catch (error) {
+                    console.error('Error calculating total bill:', error);
+                    errorMessage.textContent = error.message;
+                }
+            }
+
+            // Update totals per plan
+            const totalsPerPlan = {};
+
+            function updateTotals(planId, totalBill) {
+                if (!totalsPerPlan[planId]) {
+                    totalsPerPlan[planId] = 0;
+                }
+                totalsPerPlan[planId] += parseFloat(totalBill);
+
+                renderTotals();
+            }
+
+            function renderTotals() {
+                totalsList.innerHTML = '';
+
+                let mostSpentPlan = null;
+                let leastSpentPlan = null;
+
+                Object.keys(totalsPerPlan).forEach(planId => {
+                    const planTotal = totalsPerPlan[planId];
+                    const planName = [...pricePlanSelect.options].find(option => option.value === planId).textContent;
+
+                    const totalElement = document.createElement('div');
+                    totalElement.textContent = `${planName}: ${planTotal.toFixed(2)} ZAR`;
+                    totalsList.appendChild(totalElement);
+
+                    if (!mostSpentPlan || planTotal > totalsPerPlan[mostSpentPlan]) {
+                        mostSpentPlan = planId;
+                    }
+                    if (!leastSpentPlan || planTotal < totalsPerPlan[leastSpentPlan]) {
+                        leastSpentPlan = planId;
+                    }
+                });
+
+                mostSpentPlanElement.textContent = mostSpentPlan ? `${totalsPerPlan[mostSpentPlan].toFixed(2)} ZAR` : '-';
+                leastSpentPlanElement.textContent = leastSpentPlan ? `${totalsPerPlan[leastSpentPlan].toFixed(2)} ZAR` : '-';
+            }
+
+            // Handle form submission
+            calculatorForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                errorMessage.textContent = '';
+
+                const planId = pricePlanSelect.value;
+                const actions = document.getElementById('actions').value;
+
+                if (planId && actions) {
+                    await calculateTotalBill(planId, actions);
+                } else {
+                    errorMessage.textContent = 'Please select a price plan and enter actions.';
+                }
+            });
+
+            // Initial load
+            await loadPricePlans();
+        });
+    </script>
+</body>
+</html>
